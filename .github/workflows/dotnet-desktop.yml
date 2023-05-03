@@ -1,0 +1,54 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build_and_deploy:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Test
+      run: dotnet test --no-restore --verbosity normal
+
+    - name: Publish
+      run: dotnet publish --configuration Release --no-build --output ./publish
+
+    - name: Install Web Deploy
+      run: |
+        choco install webdeploy -y
+
+    - name: Deploy to servers
+      env:
+        DEPLOY_SERVER_1_HOST: ${{ secrets.SERVER_1_HOST }}
+        DEPLOY_SERVER_1_USER: ${{ secrets.SERVER_1_USER }}
+        DEPLOY_SERVER_1_PASSWORD: ${{ secrets.SERVER_1_PASSWORD }}
+        DEPLOY_SERVER_1_TARGET_DIRECTORY: ${{ secrets.SERVER_1_TARGET_DIRECTORY }}
+        
+        DEPLOY_SERVER_2_HOST: ${{ secrets.SERVER_2_HOST }}
+        DEPLOY_SERVER_2_USER: ${{ secrets.SERVER_2_USER }}
+        DEPLOY_SERVER_2_PASSWORD: ${{ secrets.SERVER_2_PASSWORD }}
+        DEPLOY_SERVER_2_TARGET_DIRECTORY: ${{ secrets.SERVER_2_TARGET_DIRECTORY }}
+        
+        SOURCE_DIRECTORY: ./publish
+      run: |
+        # Deploy to Server 1
+        & "C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe" -verb:sync -source:contentPath=$env:SOURCE_DIRECTORY -dest:contentPath=$env:DEPLOY_SERVER_1_TARGET_DIRECTORY,computerName=https://$env:DEPLOY_SERVER_1_HOST:8172/msdeploy.axd,userName=$env:DEPLOY_SERVER_1_USER,password=$env:DEPLOY_SERVER_1_PASSWORD,authType=Basic -allowUntrusted
+
+        # Deploy to Server 2
+        & "C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe" -verb:sync -source:contentPath=$env:SOURCE_DIRECTORY -dest:contentPath=$env:DEPLOY_SERVER_2_TARGET_DIRECTORY,computerName=https://$env:DEPLOY_SERVER_2_HOST:8172/msdeploy.axd,userName=$env:DEPLOY_SERVER_2_USER,password=$env:DEPLOY_SERVER_2_PASSWORD,authType=Basic -allowUntrusted
