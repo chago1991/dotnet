@@ -6,7 +6,7 @@ on:
 
 jobs:
   build_and_deploy:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
@@ -29,26 +29,22 @@ jobs:
     - name: Publish
       run: dotnet publish --configuration Release --no-build --output ./publish
 
-    - name: Install Web Deploy
-      run: |
-        choco install webdeploy -y
+    - name: Setup AWS CLI
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
 
-    - name: Deploy to servers
-      env:
-        DEPLOY_SERVER_1_HOST: ${{ secrets.SERVER_1_HOST }}
-        DEPLOY_SERVER_1_USER: ${{ secrets.SERVER_1_USER }}
-        DEPLOY_SERVER_1_PASSWORD: ${{ secrets.SERVER_1_PASSWORD }}
-        DEPLOY_SERVER_1_TARGET_DIRECTORY: ${{ secrets.SERVER_1_TARGET_DIRECTORY }}
-        
-        DEPLOY_SERVER_2_HOST: ${{ secrets.SERVER_2_HOST }}
-        DEPLOY_SERVER_2_USER: ${{ secrets.SERVER_2_USER }}
-        DEPLOY_SERVER_2_PASSWORD: ${{ secrets.SERVER_2_PASSWORD }}
-        DEPLOY_SERVER_2_TARGET_DIRECTORY: ${{ secrets.SERVER_2_TARGET_DIRECTORY }}
-        
-        SOURCE_DIRECTORY: ./publish
+    - name: Deploy to Elastic Beanstalk Environment 1
       run: |
-        # Deploy to Server 1
-        & "C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe" -verb:sync -source:contentPath=$env:SOURCE_DIRECTORY -dest:contentPath=$env:DEPLOY_SERVER_1_TARGET_DIRECTORY,computerName=https://$env:DEPLOY_SERVER_1_HOST:8172/msdeploy.axd,userName=$env:DEPLOY_SERVER_1_USER,password=$env:DEPLOY_SERVER_1_PASSWORD,authType=Basic -allowUntrusted
+        cd ./publish
+        zip -r ../deploy-package.zip .
+        cd ..
+        aws elasticbeanstalk create-application-version --application-name your_application_name --version-label ${GITHUB_SHA::8} --source-bundle S3Bucket="${{ secrets.AWS_S3_BUCKET }}",S3Key="deploy-package-${{ github.sha }}.zip"
+        aws s3 cp deploy-package.zip s3://${{ secrets.AWS_S3_BUCKET }}/deploy-package-${{ github.sha }}.zip
+        aws elasticbeanstalk update-environment --environment-name your_environment_name_1 --version-label ${GITHUB_SHA::8}
 
-        # Deploy to Server 2
-        & "C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe" -verb:sync -source:contentPath=$env:SOURCE_DIRECTORY -dest:contentPath=$env:DEPLOY_SERVER_2_TARGET_DIRECTORY,computerName=https://$env:DEPLOY_SERVER_2_HOST:8172/msdeploy.axd,userName=$env:DEPLOY_SERVER_2_USER,password=$env:DEPLOY_SERVER_2_PASSWORD,authType=Basic -allowUntrusted
+    - name: Deploy to Elastic Beanstalk Environment 2
+      run: |
+        aws elasticbeanstalk update-environment --environment-name your_environment_name_2 --version-label ${GITHUB_SHA::8}
